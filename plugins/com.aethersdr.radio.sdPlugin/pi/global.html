@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>AetherSDR — Plugin Settings</title>
+<style>
+	:root {
+		color-scheme: dark;
+		--bg: #1f1f1f;
+		--fg: #e5e5e5;
+		--muted: #a0a0a0;
+		--field-bg: #2a2a2a;
+		--field-border: #3a3a3a;
+		--accent: #2ea3ff;
+	}
+	* { box-sizing: border-box; }
+	body {
+		margin: 0;
+		padding: 16px;
+		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+		font-size: 13px;
+		color: var(--fg);
+		background: var(--bg);
+	}
+	h1 {
+		margin: 0 0 12px 0;
+		font-size: 14px;
+		font-weight: 600;
+	}
+	.row {
+		display: flex;
+		flex-direction: column;
+		margin-bottom: 12px;
+	}
+	label {
+		font-size: 12px;
+		color: var(--muted);
+		margin-bottom: 4px;
+	}
+	input[type="text"], input[type="number"] {
+		padding: 6px 8px;
+		font-size: 13px;
+		color: var(--fg);
+		background: var(--field-bg);
+		border: 1px solid var(--field-border);
+		border-radius: 4px;
+		outline: none;
+	}
+	input[type="text"]:focus, input[type="number"]:focus {
+		border-color: var(--accent);
+	}
+	.hint {
+		margin-top: 4px;
+		font-size: 11px;
+		color: var(--muted);
+	}
+	.status {
+		margin-top: 8px;
+		padding: 6px 8px;
+		font-size: 12px;
+		border-radius: 4px;
+		background: var(--field-bg);
+		color: var(--muted);
+	}
+	.status.ok { color: #5eba7d; }
+	.status.err { color: #e06c75; }
+</style>
+</head>
+<body>
+<h1>AetherSDR Connection</h1>
+<div class="row">
+	<label for="host">TCI Host</label>
+	<input id="host" type="text" placeholder="localhost" autocomplete="off" />
+	<div class="hint">Hostname or IP address running AetherSDR's TCI server.</div>
+</div>
+<div class="row">
+	<label for="port">TCI Port</label>
+	<input id="port" type="number" min="1" max="65535" placeholder="40001" />
+	<div class="hint">Default: 40001.</div>
+</div>
+<div class="status" id="status">Loading…</div>
+
+<script>
+	let websocket = null;
+	let pluginUUID = null;
+	let settings = {};
+
+	const hostEl = document.getElementById("host");
+	const portEl = document.getElementById("port");
+	const statusEl = document.getElementById("status");
+
+	function setStatus(text, cls) {
+		statusEl.textContent = text;
+		statusEl.classList.remove("ok", "err");
+		if (cls) statusEl.classList.add(cls);
+	}
+
+	function save() {
+		settings.host = hostEl.value.trim() || "localhost";
+		settings.port = parseInt(portEl.value, 10) || 40001;
+		if (websocket && websocket.readyState === WebSocket.OPEN) {
+			websocket.send(JSON.stringify({
+				event: "setGlobalSettings",
+				context: pluginUUID,
+				payload: settings,
+			}));
+			setStatus("Saved.", "ok");
+		}
+	}
+
+	hostEl.addEventListener("change", save);
+	portEl.addEventListener("change", save);
+
+	// Required entry point per Elgato SDK — invoked by the host with:
+	//   inPort: WebSocket port for SD<->PI bridge
+	//   inUUID: this property inspector's context UUID
+	//   inRegisterEvent: event name to send for registration
+	//   inInfo: JSON-stringified {application, devices, ...} (we ignore it)
+	function connectElgatoStreamDeckSocket(inPort, inUUID, inRegisterEvent, inInfo) {
+		pluginUUID = inUUID;
+		websocket = new WebSocket("ws://127.0.0.1:" + inPort);
+		websocket.onopen = () => {
+			websocket.send(JSON.stringify({ event: inRegisterEvent, uuid: inUUID }));
+			websocket.send(JSON.stringify({ event: "getGlobalSettings", context: inUUID }));
+		};
+		websocket.onmessage = (e) => {
+			const msg = JSON.parse(e.data);
+			if (msg.event === "didReceiveGlobalSettings") {
+				settings = (msg.payload && msg.payload.settings) || {};
+				hostEl.value = settings.host || "localhost";
+				portEl.value = settings.port || 40001;
+				setStatus("Loaded.", "ok");
+			}
+		};
+		websocket.onerror = () => setStatus("Connection error.", "err");
+	}
+
+	// Expose globally for the host's PI bootstrap to find.
+	window.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
+</script>
+</body>
+</html>
