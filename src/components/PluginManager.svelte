@@ -9,6 +9,7 @@
 	import WarningCircle from "phosphor-svelte/lib/WarningCircle";
 	import ListedPlugin from "./ListedPlugin.svelte";
 	import PluginDetails from "./PluginDetails.svelte";
+	import PluginSettingsView from "./PluginSettingsView.svelte";
 	import Popup from "./Popup.svelte";
 	import Tooltip from "./Tooltip.svelte";
 
@@ -62,6 +63,7 @@
 	}
 
 	let openDetailsView: string | null = null;
+	let settingsPlugin: { id: string; name: string; property_inspector_path?: string | null } | null = null;
 	type GitHubPlugin = {
 		name: string;
 		author: string;
@@ -236,7 +238,7 @@
 					else removePlugin(plugin);
 				}}
 				actionLabel={$settings?.developer ? "Reload" : "Remove"}
-				secondaryAction={!plugin.registered ? () => invoke("open_log_directory") : plugin.has_settings_interface ? () => invoke("show_settings_interface", { plugin: plugin.id }) : undefined}
+				secondaryAction={!plugin.registered ? () => invoke("open_log_directory") : plugin.has_settings_interface ? () => invoke("show_settings_interface", { plugin: plugin.id }) : plugin.property_inspector_path ? () => settingsPlugin = plugin : undefined}
 				secondaryActionLabel={!plugin.registered ? "View logs" : "Settings"}
 			>
 				<svelte:fragment slot="subtitle">
@@ -418,3 +420,5 @@
 		</button>
 	</div>
 {/if}
+
+<PluginSettingsView bind:plugin={settingsPlugin} />

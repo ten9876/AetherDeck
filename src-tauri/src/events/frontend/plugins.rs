@@ -14,6 +14,9 @@ pub struct PluginInfo {
 	icon: String,
 	version: String,
 	has_settings_interface: bool,
+	/// Top-level PropertyInspectorPath from the Elgato SDK manifest. AetherDeck
+	/// auto-renders this as a "Plugin Settings" panel — OpenDeck does not.
+	property_inspector_path: Option<String>,
 	builtin: bool,
 	registered: bool,
 }
@@ -50,6 +53,7 @@ pub async fn list_plugins(app: AppHandle) -> Result<Vec<PluginInfo>, Error> {
 				icon: crate::shared::convert_icon(path.join(manifest.icon).to_str().unwrap().to_owned()),
 				version: manifest.version,
 				has_settings_interface: manifest.has_settings_interface.unwrap_or(false),
+				property_inspector_path: manifest.property_inspector_path.clone(),
 				builtin: builtins.contains(&id),
 				registered: registered.contains(&id),
 				id,
@@ -173,4 +177,52 @@ pub async fn reload_plugin(app: AppHandle, id: String) {
 pub async fn show_settings_interface(plugin: String) -> Result<(), Error> {
 	crate::events::outbound::settings::show_settings_interface(&plugin).await?;
 	Ok(())
+}
+
+/// Resolve the absolute filesystem path of a plugin's top-level
+/// `PropertyInspectorPath` from the Elgato SDK manifest. Returns an error if
+/// the plugin doesn't declare one. AetherDeck-specific divergence from
+/// upstream OpenDeck — used by `PluginSettingsView.svelte` to auto-render
+/// plugin-level settings UIs.
+#[command]
+pub async fn get_plugin_property_inspector_path(plugin: String) -> Result<String, Error> {
+	let plugin_dir = config_dir().join("plugins").join(&plugin);
+	let manifest = match crate::plugins::manifest::read_manifest(&plugin_dir) {
+		Ok(m) => m,
+		Err(e) => return Err(anyhow::Error::from(e).into()),
+	};
+	let Some(pi_rel) = manifest.property_inspector_path else {
+		return Err(anyhow::anyhow!("plugin has no top-level PropertyInspectorPath").into());
+	};
+	let abs = plugin_dir.join(pi_rel);
+	Ok(abs.to_string_lossy().into_owned())
+}
+
+/// Return the parsed custom layout JSON for a plugin-shipped feedback layout.
+/// Built-in layouts (`$X1` etc.) are resolved client-side and not handled here.
+/// The layout path is relative to the plugin folder, as documented at
+/// https://docs.elgato.com/streamdeck/sdk/guides/dials/#custom-layouts.
+#[command]
+pub async fn get_feedback_layout(plugin: String, layout: String) -> Result<serde_json::Value, Error> {
+	if plugin.is_empty() || layout.is_empty() {
+		return Err(anyhow::anyhow!("plugin and layout are required").into());
+	}
+	if layout.starts_with('$') {
+		return Err(anyhow::anyhow!("built-in layouts are resolved client-side").into());
+	}
+
+	let plugin_root = config_dir().join("plugins").join(&plugin);
+	let requested = plugin_root.join(&layout);
+
+	// Guard against path traversal: the resolved file must stay inside the
+	// plugin's folder. We compare canonical paths to catch `..` segments.
+	let canonical_root = tokio::fs::canonicalize(&plugin_root).await.map_err(anyhow::Error::from)?;
+	let canonical_file = tokio::fs::canonicalize(&requested).await.map_err(anyhow::Error::from)?;
+	if !canonical_file.starts_with(&canonical_root) {
+		return Err(anyhow::anyhow!("layout path escapes plugin folder").into());
+	}
+
+	let bytes = tokio::fs::read(&canonical_file).await.map_err(anyhow::Error::from)?;
+	let parsed: serde_json::Value = serde_json::from_slice(&bytes).map_err(anyhow::Error::from)?;
+	Ok(parsed)
 }

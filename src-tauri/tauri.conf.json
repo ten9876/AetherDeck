@@ -56,12 +56,13 @@
 				"title": "OpenDeck",
 				"fullscreen": false,
 				"resizable": true,
-				"width": 800,
-				"height": 600,
-				"minWidth": 800,
-				"minHeight": 600,
+				"width": 1100,
+				"height": 900,
+				"minWidth": 480,
+				"minHeight": 360,
 				"center": true,
-				"dragDropEnabled": false
+				"dragDropEnabled": false,
+				"decorations": false
 			}
 		],
 		"security": {

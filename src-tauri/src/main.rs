@@ -94,6 +94,8 @@ async fn main() {
 			frontend::plugins::remove_plugin,
 			frontend::plugins::reload_plugin,
 			frontend::plugins::show_settings_interface,
+			frontend::plugins::get_plugin_property_inspector_path,
+			frontend::plugins::get_feedback_layout,
 			frontend::settings::get_settings,
 			frontend::settings::set_settings,
 			frontend::settings::open_config_directory,
@@ -202,9 +204,10 @@ If you have already donated, thank you so much for your support!"#,
 				.build(app)?;
 			let show = MenuItemBuilder::with_id("show", "Show").build(app)?;
 			let hide = MenuItemBuilder::with_id("hide", "Hide").build(app)?;
+			let restart = MenuItemBuilder::with_id("restart", "Restart").build(app)?;
 			let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
 			let separator = PredefinedMenuItem::separator(app)?;
-			let menu = MenuBuilder::new(app).items(&[&label, &separator, &show, &hide, &separator, &quit]).build()?;
+			let menu = MenuBuilder::new(app).items(&[&label, &separator, &show, &hide, &separator, &restart, &quit]).build()?;
 			let _tray = TrayIconBuilder::with_id("opendeck")
 				.menu(&menu)
 				.icon(app.default_window_icon().unwrap().clone())
@@ -224,6 +227,7 @@ If you have already donated, thank you so much for your support!"#,
 					let _ = match event.id().as_ref() {
 						"show" => show_window(app),
 						"hide" => hide_window(app),
+						"restart" => app.restart(),
 						"quit" => {
 							app.exit(0);
 							Ok(())
@@ -313,6 +317,15 @@ If you have already donated, thank you so much for your support!"#,
 							let plugin_id = args[pos + 1].clone();
 							std::thread::spawn(move || {
 								tauri::async_runtime::block_on(frontend::plugins::reload_plugin(app, plugin_id));
+							});
+						}
+					} else if let Some(pos) = args.iter().position(|x| x.to_lowercase().trim() == "--sleep-device") {
+						if args.len() > pos + 1 {
+							let device_id = args[pos + 1].clone();
+							std::thread::spawn(move || {
+								if let Err(error) = tauri::async_runtime::block_on(device_sleep::sleep_device(device_id)) {
+									log::error!("Failed to sleep device: {error}");
+								}
 							});
 						}
 					} else if let Some(pos) = args.iter().position(|x| x.to_lowercase().trim() == "--process-message") {
